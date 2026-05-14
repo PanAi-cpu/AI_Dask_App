@@ -21,40 +21,8 @@
         <span>视频流加载中...</span>
       </div>
     </div>
-
-        <div class="control-bar">
-          <div class="control-buttons">
-            <button class="control-btn">⏯️</button>
-            <button class="control-btn">⏹️</button>
-            <button class="control-btn">⏪</button>
-            <button class="control-btn">⏩</button>
-          </div>
-
-          <div class="timeline-container">
-            <div class="progress-bar">
-              <div class="progress" style="width: 45%"></div>
-            </div>
-            <div class="time-display">
-              <span class="current">14:23:05</span>
-              <span class="separator">/</span>
-              <span class="total">14:53:05</span>
-            </div>
-          </div>
-
-          <div class="buffer-info">
-            <span class="buffer-text">缓存: 98%</span>
-          </div>
-        </div>
-
-        <div class="defect-timeline">
-          <div class="marker" style="left: 15%" title="破洞 14:23:05"></div>
-          <div class="marker" style="left: 35%" title="脏污 14:25:30"></div>
-          <div class="marker" style="left: 65%" title="划痕 14:28:15"></div>
-          <div class="marker" style="left: 82%" title="破洞 14:30:45"></div>
-        </div>
-      </div>
-    </div>
-
+  </div>
+  </div>
 
     <!-- 中部：统计卡片 - 可调节高度 -->
     <div class="section stats-section" :style="{ height: statsHeight + 'px' }">
@@ -66,30 +34,30 @@
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-label">当前检测速度</div>
-            <div class="stat-value">85.3 <small>米/分钟</small></div>
+              <div class="stat-value">{{ statsData.meter_speed }} <small>米/分钟</small></div>
             <div class="stat-trend up">+2.5%</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">缺陷率</div>
-            <div class="stat-value">2.4%</div>
+            <div class="stat-value">{{ statsData.defect_rate }}%</div>
             <div class="stat-trend down">-1.2%</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">良品率</div>
-            <div class="stat-value">97.6%</div>
+            <div class="stat-value">{{ statsData.yield_rate }}%</div>
             <div class="stat-trend up">+0.8%</div>
           </div>
           <div class="stat-card">
             <div class="stat-label">今日总产量</div>
-            <div class="stat-value">12,580 <small>米</small></div>
+            <div class="stat-value">{{ statsData.meter }} <small>米</small></div>
           </div>
           <div class="stat-card">
             <div class="stat-label">今日检测次数</div>
-            <div class="stat-value">1,234 <small>次</small></div>
+            <div class="stat-value">{{ statsData.current_defects }} <small>次</small></div>
           </div>
           <div class="stat-card">
             <div class="stat-label">平均检测时间</div>
-            <div class="stat-value">0.23 <small>秒</small></div>
+            <div class="stat-value">{{ statsData.fps }}<small>秒</small></div>
           </div>
           <div class="stat-card">
             <div class="stat-label">GPU使用率</div>
@@ -153,11 +121,48 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 const videoStreamUrl = ref('http://localhost:5000/video_feed')
 const currentTime = ref('')
-const videoHeight = ref(900)  // 视频区域固定高度
-const statsHeight = ref(400)  // 统计区域初始高度
+const videoHeight = ref(900)
+const statsHeight = ref(400)
 
+// 实时数据
+const statsData = ref({
+    meter: 0,
+    fps: 0,
+    total_defects_today: 0,
+    current_defects: 0,
+    defect_rate: 0,
+    yield_rate: 0
+})
 
+let statsTimer = null
 
+// 更新时间
+const updateTime = () => {
+    const now = new Date()
+    currentTime.value = now.toLocaleTimeString('zh-CN', { hour12: false })
+}
+
+// 拉取后端数据
+const fetchStats = async () => {
+    try {
+        const res = await fetch('http://localhost:5000/api/stats')
+        const data = await res.json()
+        statsData.value = data
+    } catch (e) {
+        // 后端没启动时不报错
+    }
+}
+
+onMounted(() => {
+    updateTime()
+    fetchStats()
+    setInterval(updateTime, 1000)      // 每秒更新时间
+    statsTimer = setInterval(fetchStats, 1000)  // 每秒刷新数据
+})
+
+onUnmounted(() => {
+    if (statsTimer) clearInterval(statsTimer)
+})
 </script>
 
 <style scoped>
@@ -301,70 +306,11 @@ const statsHeight = ref(400)  // 统计区域初始高度
 }
 
 /* 控制栏 */
-.control-bar {
-  flex-shrink: 0;
-  padding: 10px 16px;
-  background: #2a2a2a;
-  border-top: 1px solid #3a3a3a;
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
 
-.control-buttons {
-  display: flex;
-  gap: 6px;
-}
 
-.control-btn {
-  background: #3a3a3a;
-  border: none;
-  color: #e0e0e0;
-  width: 32px;
-  height: 32px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-}
 
-.control-btn:hover {
-  background: #4a4a4a;
-  transform: scale(1.05);
-}
 
-.timeline-container {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 200px;
-}
 
-.progress-bar {
-  flex: 1;
-  height: 4px;
-  background: #3a3a3a;
-  border-radius: 2px;
-  cursor: pointer;
-  position: relative;
-  overflow: hidden;
-}
-
-.progress-bar::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-  animation: shimmer 2s infinite;
-}
 
 @keyframes shimmer {
   0% {
@@ -383,17 +329,7 @@ const statsHeight = ref(400)  // 统计区域初始高度
   position: relative;
 }
 
-.time-display {
-  font-size: 12px;
-  color: #888;
-  white-space: nowrap;
-}
 
-.buffer-info {
-  font-size: 11px;
-  color: #666;
-  white-space: nowrap;
-}
 
 .defect-timeline {
   height: 3px;

@@ -12,20 +12,20 @@ import json
 from flask import Flask, Response, jsonify, request
 from flask_cors import CORS
 import webview
-from counter_reader import read_counter_value   #计米器代码
+from counter_reader import read_counter_value  # 计米器代码
 
 # ============================================================
 # 配置
 # ============================================================
-MODEL_PATH = r"../AAAceshi/best.pt"
+MODEL_PATH = r"../YOLO/best.pt"
 CAMERA_INDEX = 0  # USB摄像头索引，0通常是第一个
 CONF_THRESHOLD = 0.5  # 置信度阈值
 FRAME_WIDTH = 1280  # 采集分辨率宽
 FRAME_HEIGHT = 720  # 采集分辨率高
 FLASK_PORT = 5000
 
-#新增
-READ_INTERVAL = 0.5   # 计米器读取间隔
+# 新增
+READ_INTERVAL = 0.5  # 计米器读取间隔
 # ============================================================
 # Flask应用
 # ============================================================
@@ -50,12 +50,13 @@ class DetectionEngine:
         self.thread = None
         self.fps = 0
         self.total_defects_today = 0
-
-        #新增
         # 计米器缓存
         self.current_meter = 0
         self.last_read_time = 0
-
+        # 速度的类变量
+        self.meter_speed = 0  # 实时速度（米/分钟）
+        self.last_meter = 0  # 上一次读到的米数
+        self.last_speed_time = 0  # 上一次计算速度的时间
     def start(self):
         """启动检测引擎"""
         from ultralytics import YOLO
@@ -98,16 +99,24 @@ class DetectionEngine:
                 continue
 
             frame_count += 1
-            #新增
             # 定时读取计米器
             current_time = time.time()
 
             if current_time - self.last_read_time > READ_INTERVAL:
-
                 meter_raw = read_counter_value()
-
                 if meter_raw is not None:
-                    self.current_meter = round(meter_raw / 100, 2)
+                    new_meter = round(meter_raw / 100, 2)
+
+                    # 计算实时速度（米/分钟）
+                    if self.last_speed_time > 0 and self.last_meter > 0:
+                        meter_diff = new_meter - self.last_meter  # 米数增量
+                        time_diff = current_time - self.last_speed_time  # 时间差（秒）
+                        if time_diff > 0:
+                            self.meter_speed = round(meter_diff / time_diff * 60, 1)  # 换算成米/分钟
+
+                    self.current_meter = new_meter
+                    self.last_meter = new_meter
+                    self.last_speed_time = current_time
 
                 self.last_read_time = current_time
 
@@ -174,12 +183,28 @@ class DetectionEngine:
     def get_stats(self):
         """获取当前统计信息"""
         with self.lock:
+            total_meter = self.current_meter
+            total_defects = self.total_defects_today  # 累计缺陷总数
+
+            # 缺陷率 = 累计缺陷总数 / 总米数 × 100
+            if total_meter > 0:
+                defect_rate = round(total_defects / total_meter * 100, 1)
+                # 良品率 = （总米数 - 累计缺陷） / 总米数 × 100
+                yield_rate = round((total_meter - total_defects) / total_meter * 100, 1)
+            else:
+                defect_rate = 0
+                yield_rate = 100
+
             return {
                 "fps": self.fps,
-                "total_defects_today": self.total_defects_today,
+                "meter": total_meter,
+                "total_defects_today": total_defects,
                 "current_defects": len(self.latest_defects),
+                "defect_rate": defect_rate,
+                "yield_rate": yield_rate,
                 "defects": self.latest_defects.copy(),
-                "model_names": list(self.model.names.values()) if self.model else []
+                "model_names": list(self.model.names.values()) if self.model else [],
+                "meter_speed": self.meter_speed,  # 实时速度（米/分钟）
             }
 
 
@@ -214,7 +239,7 @@ def video_feed():
                 # 还没帧，发送空白
                 blank = cv2.imencode('.jpg',
                                      cv2.putText(
-                                         cv2.zeros((480, 640, 3), dtype=cv2.uint8),
+                                         np.zeros((480, 640, 3), dtype=np.uint8),
                                          "Waiting for camera...", (50, 240),
                                          cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 255), 2
                                      )
